@@ -544,3 +544,89 @@ func listTenantAuthorizations(token *auth.Token, w http.ResponseWriter, req *htt
 	// process status codes
 	processStatusCodes(httpStatus, httpResponse, w)
 }
+
+// LDAP group mapping handlers
+// NOTE: for now, these actions should be performed only by `admin` roles
+
+// addLdapMapping adds a new LDAP->Role mapping to the system.
+// it can return various HTTP status codes:
+//    202 (Created; mapping added to the system)
+//    400 (BadRequest; mapping for the group exists already)
+//    500 (internal server error)
+func addLdapMapping(w http.ResponseWriter, req *http.Request) {
+	//TODO: check token claims for authorization; only super user can create new users
+	body, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		serverError(w, errors.New("Failed to read body from request: "+err.Error()))
+		return
+	}
+
+	ldapMappingReq := &ldapMapping{}
+	if err := json.Unmarshal(body, ldapMappingReq); err != nil {
+		serverError(w, errors.New("Failed to unmarshal ldap mapping info. from request body: "+err.Error()))
+		return
+	}
+
+	statusCode, resp := addLdapMappingHelper(ldapMappingReq)
+	processStatusCodes(statusCode, resp, w)
+}
+
+// deleteLdapMapping deletes the existing LDAP->Role mapping from the system.
+// it can return various HTTP status codes:
+//    201 (NoContent; mapping deleted from the system)
+//    404 (NotFound; mapping not found for the given group name)
+//    500 (internal server error)
+func deleteLdapMapping(w http.ResponseWriter, req *http.Request) {
+	//TODO: check token claims for authorization; only super user can create new users
+	vars := mux.Vars(req)
+
+	statusCode, resp := deleteLdapMappingHelper(vars["group_name"])
+	processStatusCodes(statusCode, resp, w)
+}
+
+// updateLdapMapping updates the existing LDAP->Role mapping in the system.
+// it can return various HTTP status codes:
+//    200 (OK; mapping updated)
+//    404 (NotFound; mapping not found for the given group name)
+//    500 (internal server error)
+func updateLdapMapping(w http.ResponseWriter, req *http.Request) {
+	//TODO: check token claims for authorization; only super user can create new users
+	vars := mux.Vars(req)
+	body, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		serverError(w, errors.New("Failed to read body from request: "+err.Error()))
+		return
+	}
+
+	ldapMappingUpdateReq := &ldapMapping{}
+	if err := json.Unmarshal(body, ldapMappingUpdateReq); err != nil {
+		serverError(w, errors.New("Failed to unmarshal ldap mapping info. from request body: "+err.Error()))
+		return
+	}
+
+	statusCode, resp := updateLdapMappingHelper(vars["group_name"], ldapMappingUpdateReq)
+	processStatusCodes(statusCode, resp, w)
+}
+
+// getLdapMapping returns the LDAP->Role mapping of the given group name.
+// it can return various HTTP status codes:
+//    200 (OK; fetch was successful)
+//    404 (NotFound; mapping not found for the given group name)
+//    500 (internal server error)
+func getLdapMapping(w http.ResponseWriter, req *http.Request) {
+	//TODO: check token claims for authorization; only super user can create new users
+	vars := mux.Vars(req)
+
+	statusCode, resp := getLdapMappingHelper(vars["group_name"])
+	processStatusCodes(statusCode, resp, w)
+}
+
+//  getLdapMappings returns the LDAP->Role mappings of all the groups in the system.
+// it can return various HTTP status codes:
+//    200 (OK; fetch was successful)
+//    500 (internal server error)
+func getLdapMappings(w http.ResponseWriter, req *http.Request) {
+	//TODO: check token claims for authorization; only super user can create new users
+	statusCode, resp := getLdapMappingsHelper()
+	processStatusCodes(statusCode, resp, w)
+}

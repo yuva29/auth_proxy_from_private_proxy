@@ -127,6 +127,20 @@ type InternalLocalUser struct {
 	PasswordHash []byte `json:"password_hash"`
 }
 
+// LdapRoleMapping is the internal representation LDAP->Role mapping.
+// Each LDAP group maps to only one role in our system.
+//
+// Fields:
+//  GroupName: DN (Distinguished Name)  of the group
+//  Principal: associated principal object
+//  PrincipalID: For each ldap-role mapping, there should be a principal created in the system.
+//               there is always 1-1 mapping from group to role
+type LdapRoleMapping struct {
+	GroupName   string
+	Principal   Principal
+	PrincipalID string
+}
+
 //
 // KVStoreConfig encapsulates config data that determines KV store
 // details specific to a running instance of CCN_proxy

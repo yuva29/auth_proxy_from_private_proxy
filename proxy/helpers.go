@@ -16,6 +16,228 @@ import (
 	"github.com/contiv/ccn_proxy/usermgmt"
 )
 
+// getLdapMappingsHelper helper function to get mapping information of all LDAP groups.
+// return values:
+//  int: http status code
+//  []byte: http response message; this goes along with status code
+//          this could be an error message or JSON response based on the execution flow
+func getLdapMappingsHelper() (int, []byte) {
+	mappings, err := usermgmt.GetLdapMappings()
+	if err != nil {
+		return http.StatusInternalServerError, []byte(err.Error())
+	}
+
+	lms := []ldapMapping{}
+	for _, mapping := range mappings {
+		lm := ldapMapping{
+			GroupName: mapping.GroupName,
+			Role:      mapping.Principal.Role.String(),
+		}
+		lms = append(lms, lm)
+	}
+
+	jData, err := json.Marshal(lms)
+	if err != nil {
+		return http.StatusInternalServerError, []byte(err.Error())
+	}
+
+	return http.StatusOK, jData
+}
+
+// getLdapMappingHelper helper function to get mapping details of the given group name.
+// params:
+//  ldapGroupName: of the group whose mapping needs to be fetched
+// return values:
+//  int: http status code
+//  []byte: http response message; this goes along with status code
+//          this could be an error message or JSON response based on the execution flow
+func getLdapMappingHelper(ldapGroupName string) (int, []byte) {
+	if common.IsEmpty(ldapGroupName) {
+		return http.StatusBadRequest, []byte("Empty group name")
+	}
+
+	mapping, err := usermgmt.GetLdapMapping(ldapGroupName)
+
+	switch err {
+	case nil:
+		lm := ldapMapping{
+			GroupName: mapping.GroupName,
+			Role:      mapping.Principal.Role.String(),
+		}
+
+		jData, err := json.Marshal(lm)
+		if err != nil {
+			return http.StatusInternalServerError, []byte(err.Error())
+		}
+
+		return http.StatusOK, jData
+	case ccnerrors.ErrKeyNotFound:
+		return http.StatusNotFound, nil
+	default:
+		return http.StatusInternalServerError, []byte(err.Error())
+	}
+}
+
+// updateLdapMappingInfo helper function for `updateLdapMappingHelper`
+// params:
+//  updateReq: *ldapMapping update request object
+//  actual: existing *types.LdapRoleMapping in the data store;
+//          new mapping object is created from actual + updateReq and added to the data store
+// return values:
+//  int: http status code
+//  []byte: http response message; this goes along with status code
+//          this could be an error message or JSON response based on the execution flow
+func updateLdapMappingInfo(updateReq *ldapMapping, actual *types.LdapRoleMapping) (int, []byte) {
+	updateMappingObj := &types.LdapRoleMapping{
+		PrincipalID: actual.PrincipalID,
+		GroupName:   actual.GroupName,
+		Principal: types.Principal{
+			UUID: actual.Principal.UUID,
+		},
+	}
+
+	updateRequired := false
+	if !common.IsEmpty(updateReq.Role) {
+		role, err := types.Role(updateReq.Role)
+		if err != nil {
+			return http.StatusInternalServerError, []byte(fmt.Sprintf("Invalid role %q", role))
+		}
+
+		updateMappingObj.Principal.Role = role
+		updateRequired = true
+	}
+
+	// default mapping response
+	lm := ldapMapping{
+		GroupName: actual.GroupName,
+		Role:      actual.Principal.Role.String(),
+	}
+
+	// nothing needs to be updated; return here and save one data store operation, Yay!
+	if !updateRequired {
+		jData, err := json.Marshal(lm)
+		if err != nil {
+			return http.StatusInternalServerError, []byte(err.Error())
+		}
+
+		return http.StatusOK, jData
+	}
+
+	err := usermgmt.UpdateLdapMapping(actual.GroupName, updateMappingObj)
+	switch err {
+	case nil:
+		// only the role is updated; nothing else in `lm` needs to be updated
+		lm.Role = updateMappingObj.Principal.Role.String()
+
+		jData, err := json.Marshal(lm)
+		if err != nil {
+			return http.StatusInternalServerError, []byte(err.Error())
+		}
+
+		return http.StatusOK, jData
+	case ccnerrors.ErrKeyNotFound: // from DeleteLdapMapping()
+		return http.StatusNotFound, nil
+	default:
+		return http.StatusInternalServerError, []byte(err.Error())
+	}
+}
+
+// updateLdapMappingHelper helper function to update the existing LDAP mapping information.
+// params:
+//  ldapGroupName: of the group name to be updated
+//  ldapMappingUpdateReq: *ldapMapping update request object
+// return values:
+//  int: http status code
+//  []byte: http response message; this goes along with status code
+//          this could be an error message or JSON response based on the execution flow
+func updateLdapMappingHelper(ldapGroupName string, ldapMappingUpdateReq *ldapMapping) (int, []byte) {
+	if common.IsEmpty(ldapGroupName) {
+		return http.StatusBadRequest, []byte("Empty group name")
+	}
+
+	mapping, err := usermgmt.GetLdapMapping(ldapGroupName)
+	switch err {
+	case nil:
+		return updateLdapMappingInfo(ldapMappingUpdateReq, mapping)
+	case ccnerrors.ErrKeyNotFound:
+		return http.StatusNotFound, nil
+	default:
+		return http.StatusInternalServerError, []byte(err.Error())
+	}
+}
+
+// deleteLdapMappingHelper helper function to delete ldap-role mapping for the given group name.
+// params:
+//  ldapGroupName: of the group to be deleted from the store; ideally the mapping that gets deleted
+// return values:
+//  int: http status code
+//  []byte: http response message; this goes along with status code
+//          this could be an error message or JSON response based on the execution flow
+func deleteLdapMappingHelper(ldapGroupName string) (int, []byte) {
+	if common.IsEmpty(ldapGroupName) {
+		return http.StatusBadRequest, []byte("Empty group name")
+	}
+
+	err := usermgmt.DeleteLdapMapping(ldapGroupName)
+	switch err {
+	case nil:
+		return http.StatusNoContent, nil
+	case ccnerrors.ErrKeyNotFound:
+		return http.StatusNotFound, nil
+	default:
+		return http.StatusInternalServerError, []byte(err.Error())
+	}
+}
+
+// addLdapMappingHelper helper function to add the given ldap-role mapping to the data store.
+// params:
+//  ldapMappingReq: ldapMapping request object; based on which types.LdapRoleMapping is created
+// return values:
+//  int: http status code
+//  []byte: http response message; this goes along with status code
+//          this could be an error message or JSON response based on the execution flow
+func addLdapMappingHelper(ldapMappingReq *ldapMapping) (int, []byte) {
+	if common.IsEmpty(ldapMappingReq.GroupName) {
+		return http.StatusBadRequest, []byte("Empty group name")
+	}
+
+	role, err := types.Role(ldapMappingReq.Role)
+	if err != nil {
+		return http.StatusBadRequest, []byte(fmt.Sprintf("Invalid role %q", ldapMappingReq.Role))
+	}
+
+	pID := uuid.NewV4().String()
+	mapping := types.LdapRoleMapping{
+		GroupName: ldapMappingReq.GroupName,
+		Principal: types.Principal{
+			UUID: pID,
+			Role: role,
+		},
+		PrincipalID: pID,
+	}
+
+	err = usermgmt.AddLdapMapping(&mapping)
+	switch err {
+	case nil:
+		lm := ldapMapping{
+			GroupName: mapping.GroupName,
+			Role:      mapping.Principal.Role.String(),
+		}
+
+		jData, err := json.Marshal(lm)
+		if err != nil {
+			return http.StatusInternalServerError, []byte(err.Error())
+		}
+
+		return http.StatusCreated, jData
+	case ccnerrors.ErrKeyExists:
+		return http.StatusBadRequest, []byte(fmt.Sprintf("Mapping for group %q exists already", ldapMappingReq.GroupName))
+	default:
+		return http.StatusInternalServerError, []byte(err.Error())
+	}
+
+}
+
 // getLocalUserHelper helper function to get the details of given username.
 // params:
 //  username: of the user to fetch details from the data store

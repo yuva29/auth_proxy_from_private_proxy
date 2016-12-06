@@ -26,6 +26,7 @@ var (
 	datastorePaths = []string{
 		GetPath(RootLocalUsers),
 		GetPath(RootPrincipals),
+		GetPath(RootLdapMappings),
 	}
 )
 

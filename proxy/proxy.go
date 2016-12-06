@@ -188,6 +188,11 @@ func addRoutes(s *Server, router *mux.Router) {
 	addAuthorizationRoutes(router)
 
 	//
+	// LDAP management endpoints
+	//
+	addLdapMgmtRoutes(router)
+
+	//
 	// RBAC-enforced endpoints with optional filtering of results
 	//
 	filteredRoutes := map[string]rbacFilter{
@@ -246,4 +251,12 @@ func addAuthorizationRoutes(router *mux.Router) {
 	router.Path("/api/v1/ccn_proxy/authorizations/{authzUUID}").Methods("GET").HandlerFunc(adminOnly(getTenantAuthorization))
 	router.Path("/api/v1/ccn_proxy/authorizations/{authzUUID}").Methods("PATCH").HandlerFunc(adminOnly(updateTenantAuthorization))
 	router.Path("/api/v1/ccn_proxy/authorizations").Methods("GET").HandlerFunc(adminOnly(listTenantAuthorizations))
+}
+
+func addLdapMgmtRoutes(router *mux.Router) {
+	router.Path("/api/v1/ccn_proxy/ldap_mappings").Methods("POST").HandlerFunc(addLdapMapping)
+	router.Path("/api/v1/ccn_proxy/ldap_mappings/{group_name}").Methods("GET").HandlerFunc(getLdapMapping)
+	router.Path("/api/v1/ccn_proxy/ldap_mappings/{group_name}").Methods("DELETE").HandlerFunc(deleteLdapMapping)
+	router.Path("/api/v1/ccn_proxy/ldap_mappings/{group_name}").Methods("PATCH").HandlerFunc(updateLdapMapping)
+	router.Path("/api/v1/ccn_proxy/ldap_mappings").Methods("GET").HandlerFunc(getLdapMappings)
 }
