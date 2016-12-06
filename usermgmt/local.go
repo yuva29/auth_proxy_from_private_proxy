@@ -15,48 +15,6 @@ import (
 // This file contains all local user management APIs.
 // NOTE: Built-in users(admin, ops) cannot be changed/updated. it needs to be consumed in the way its defined in code.
 
-// deleteUserPrincipal helper function to delete user.principal; called from `DeleteLocalUser`.
-// params:
-// principal: reference of the principal object to be deleted from the data store
-//  stateDrv: data store driver object
-// return values:
-//  error: custom error with error from `ClearState(...)`
-func deleteUserPrincipal(principal *types.Principal, stateDrv types.StateDriver) error {
-	if err := stateDrv.ClearState(GetPath(RootPrincipals, principal.UUID)); err != nil {
-		return fmt.Errorf("Failed to clear principal %#v from store %#v", principal, err)
-	}
-
-	return nil
-}
-
-// addUserPrincipal helper function to insert user.principal; called from `AddLocalUser`.
-// params:
-//  principal: reference of the principal object to be inserted into the data store
-//  stateDrv: data store driver object
-// retutn values:
-//  error: any relevant custom errors or as returned by consecutive calls
-func addUserPrincipal(principal *types.Principal, stateDrv types.StateDriver) error {
-	_, err := stateDrv.Read(GetPath(RootPrincipals, principal.UUID))
-
-	switch err {
-	case nil:
-		return fmt.Errorf("%s: %q", ccnerrors.ErrKeyExists, principal.UUID)
-	case ccnerrors.ErrKeyNotFound:
-		val, err := json.Marshal(principal)
-		if err != nil {
-			return fmt.Errorf("Failed to marshal principal %#v, %#v", principal, err)
-		}
-
-		if err := stateDrv.Write(GetPath(RootPrincipals, principal.UUID), val); err != nil {
-			return fmt.Errorf("Failed to write local user principal to data store %#v", err)
-		}
-
-		return nil
-	default:
-		return err
-	}
-}
-
 // getLocalUser helper function that looks up a user entry in `users` using username
 // params:
 //  username:string; name of the user to be fetched
@@ -165,13 +123,13 @@ func DeleteLocalUser(username string) error {
 		return err
 	}
 
-	if err := deleteUserPrincipal(&user.Principal, stateDrv); err != nil {
+	if err := deletePrincipal(&user.Principal, stateDrv); err != nil {
 		return err
 	}
 
 	if err := stateDrv.ClearState(GetPath(RootLocalUsers, username)); err != nil {
 		//cleanup; there is always a principal associated with user (1-1 mapping)
-		addUserPrincipal(&user.Principal, stateDrv)
+		addPrincipal(&user.Principal, stateDrv)
 		return fmt.Errorf("Failed to clear %q from store %#v", username, err)
 	}
 
@@ -198,7 +156,7 @@ func AddLocalUser(user *types.InternalLocalUser) error {
 		log.Errorf("User '%s' already exists!", user.Username)
 		return ccnerrors.ErrKeyExists
 	case ccnerrors.ErrKeyNotFound:
-		if err := addUserPrincipal(&user.Principal, stateDrv); err != nil {
+		if err := addPrincipal(&user.Principal, stateDrv); err != nil {
 			return err
 		}
 
@@ -209,7 +167,7 @@ func AddLocalUser(user *types.InternalLocalUser) error {
 
 		if err := stateDrv.Write(key, val); err != nil {
 			// cleanup; to ensure user.principal is not left behind in the data store
-			deleteUserPrincipal(&user.Principal, stateDrv)
+			deletePrincipal(&user.Principal, stateDrv)
 			return fmt.Errorf("Failed to write local user info. to data store %#v", err)
 		}
 

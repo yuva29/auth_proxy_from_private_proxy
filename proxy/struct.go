@@ -78,3 +78,9 @@ type localUser struct {
 	Role     string `json:"role"`
 	Disable  bool   `json:"disable"`
 }
+
+// ldapMapping represents the LDAP->Role mapping request object.
+type ldapMapping struct {
+	GroupName string `json:"group_name"`
+	Role      string `json:"role"`
+}
