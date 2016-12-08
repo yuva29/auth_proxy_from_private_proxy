@@ -198,8 +198,8 @@ func deleteLocalUser(w http.ResponseWriter, req *http.Request) {
 // updateLocalUser updates the existing user with the given details.
 // it can return various HTTP status codes:
 //    204 (update was successful)
+//    400 (invalid role/cannot update built-in user)
 //    404 (user not found)
-//    400 (cannot update built-in user)
 //    500 (internal server error)
 func updateLocalUser(w http.ResponseWriter, req *http.Request) {
 	//TODO: check token claims for authorization; only super user can create new users
