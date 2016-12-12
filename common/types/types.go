@@ -48,28 +48,6 @@ const (
 // Tenant is a type to represent the name of the tenant in CCN
 type Tenant string
 
-//
-// Principal represents a 'user' to 'role' association. A 'user' can have many
-// 'roles', and thus can have multiple principals representing it during a
-// 'session'. This set is also known as the active role set (ARS).
-//
-// A CCN local user is a simplified version of this association, where the
-// mapping is 1:1 - i.e., a CCN local user can have only one pre-defined role.
-//
-// A CCN ldap group (representing a LDAP group in some active directory forest)
-// also has a 1:1 mapping with a principal. However, since a 'user' can be part
-// of multiple ldap groups, the ARS will be determined at the time
-// authentication is carried out, and may comprise of multiple principals.
-//
-// Fields:
-//  UUID: unique identifier of the principal
-//  Role: Role associated with a principal
-//
-type Principal struct {
-	UUID string   `json:"uuid"`
-	Role RoleType `json:"roletype"`
-}
-
 // String returns the string representation of `RoleType`
 func (role RoleType) String() string {
 	switch role {
@@ -103,45 +81,15 @@ func Role(roleStr string) (RoleType, error) {
 //  UserName: of the user. Read only field. Must be unique.
 //  Password: of the user. Not stored anywhere. Used only for updates.
 //  Disable: if authorizations for this local user is disabled.
-//
-type LocalUser struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-	Disable  bool   `json:"disable"`
-}
-
-// InternalLocalUser information
-//
-// Fields:
-//  UserName: inherited from LocalUser
-//  Password: inherited from LocalUser. Not stored anywhere. Used to update password hash.
-//  Disble: inherited from LocalUser.
-//  Principal: associated principal object.
-//  PrincipalID: For each local user, there should be a principal created in the system.
 //  PasswordHash: of the password string.
 //
-type InternalLocalUser struct {
-	LocalUser
-	Principal    Principal
-	PrincipalID  string `json:"principal_id"`
-	PasswordHash []byte `json:"password_hash"`
+type LocalUser struct {
+	Username     string `json:"username"`
+	Password     string `json:"password,omitempty"`
+	Disable      bool   `json:"disable"`
+	PasswordHash []byte `json:"password_hash,omitempty"`
 }
 
-// LdapRoleMapping is the internal representation LDAP->Role mapping.
-// Each LDAP group maps to only one role in our system.
-//
-// Fields:
-//  GroupName: DN (Distinguished Name)  of the group
-//  Principal: associated principal object
-//  PrincipalID: For each ldap-role mapping, there should be a principal created in the system.
-//               there is always 1-1 mapping from group to role
-type LdapRoleMapping struct {
-	GroupName   string
-	Principal   Principal
-	PrincipalID string
-}
-
-//
 // KVStoreConfig encapsulates config data that determines KV store
 // details specific to a running instance of CCN_proxy
 //

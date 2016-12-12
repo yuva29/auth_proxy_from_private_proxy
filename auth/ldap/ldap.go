@@ -49,8 +49,9 @@ type Manager struct {
 //  username: username to authenticate
 //  password: password of the user
 // return values:
+//  []string: list of principals (LDAP group names that the user belongs)
 //  ErrADConfigNotFound if the config is not found or as returned by ldapManager.Authenticate
-func Authenticate(username, password string) ([]*types.Principal, error) {
+func Authenticate(username, password string) ([]string, error) {
 	if cfg := GetADConfig(); cfg != nil {
 		ldapManager := Manager{Config: *cfg}
 		return ldapManager.Authenticate(username, password)
@@ -65,9 +66,9 @@ func Authenticate(username, password string) ([]*types.Principal, error) {
 //  username: username to authenticate
 //  password: password of the user
 // return values:
-//  []*types.Principal on successful authentication else nil
+//  []string of LDAP group names of the user on successful authentication else nil
 //  error: nil on successful authentication otherwise ErrADAccessDenied, ErrUserNotFound, etc.
-func (lm *Manager) Authenticate(username, password string) ([]*types.Principal, error) {
+func (lm *Manager) Authenticate(username, password string) ([]string, error) {
 	// list of attributes to be fetched from the matching records
 	var attributes = []string{
 		"memberof",
@@ -120,13 +121,10 @@ func (lm *Manager) Authenticate(username, password string) ([]*types.Principal, 
 		return nil, err
 	}
 
-	// XXX: this code is not complete yet
-	// TODO: these groups should be associated with the principals
-
 	log.Debugf("Authorized groups:%#v", groups)
-
 	log.Info("AD authentication successful")
-	return nil, nil
+
+	return groups, nil
 }
 
 // getUserGroups performs a nested search on the given first-level user groups to uncover all the groups that the user is part of.

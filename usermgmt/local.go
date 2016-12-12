@@ -9,19 +9,18 @@ import (
 	ccnerrors "github.com/contiv/ccn_proxy/common/errors"
 	"github.com/contiv/ccn_proxy/common/types"
 	"github.com/contiv/ccn_proxy/state"
-	uuid "github.com/satori/go.uuid"
 )
 
 // This file contains all local user management APIs.
 // NOTE: Built-in users(admin, ops) cannot be changed/updated. it needs to be consumed in the way its defined in code.
 
-// getLocalUser helper function that looks up a user entry in `users` using username
+// getLocalUser helper function that looks up a user entry in `/ccn_proxy/local_users` using username
 // params:
 //  username:string; name of the user to be fetched
 // return values:
 //  *types.InternalLocalUser: reference to the internal representation of the local user object
 //  error: as returned by the consecutive calls or any relevant custom errors
-func getLocalUser(username string, stateDrv types.StateDriver) (*types.InternalLocalUser, error) {
+func getLocalUser(username string, stateDrv types.StateDriver) (*types.LocalUser, error) {
 	rawData, err := stateDrv.Read(GetPath(RootLocalUsers, username))
 	if err != nil {
 		if err == ccnerrors.ErrKeyNotFound {
@@ -31,7 +30,7 @@ func getLocalUser(username string, stateDrv types.StateDriver) (*types.InternalL
 		return nil, fmt.Errorf("Failed to read local user %q data from store: %#v", username, err)
 	}
 
-	var localUser types.InternalLocalUser
+	var localUser types.LocalUser
 	if err := json.Unmarshal(rawData, &localUser); err != nil {
 		return nil, fmt.Errorf("Failed to unmarshal local user %q info %#v", username, err)
 	}
@@ -43,36 +42,41 @@ func getLocalUser(username string, stateDrv types.StateDriver) (*types.InternalL
 // return values:
 //  []types.InternalLocalUser: slice of local users
 //  error: as returned by consecutive func calls
-func GetLocalUsers() ([]*types.InternalLocalUser, error) {
+func GetLocalUsers() ([]*types.LocalUser, error) {
 	stateDrv, err := state.GetStateDriver()
 	if err != nil {
 		return nil, err
 	}
 
+	users := []*types.LocalUser{}
 	rawData, err := stateDrv.ReadAll(GetPath(RootLocalUsers))
 	if err != nil {
+		if err == ccnerrors.ErrKeyNotFound {
+			return users, nil
+		}
+
 		return nil, fmt.Errorf("Couldn't fetch users from data store")
 	}
 
-	users := []*types.InternalLocalUser{}
 	for _, data := range rawData {
-		localUser := &types.InternalLocalUser{}
+		localUser := &types.LocalUser{}
 		if err := json.Unmarshal(data, localUser); err != nil {
 			return nil, err
 		}
+
 		users = append(users, localUser)
 	}
 
 	return users, nil
 }
 
-// GetLocalUser looks up a user entry in `users` path.
+// GetLocalUser looks up a user entry in `/ccn_proxy/local_users` path.
 // params:
 //  username:string; name of the user to be fetched
 // return values:
-//  *types.InternalLocalUser: reference to the internal representation of the local user object
+//  *types.LocalUser: reference to local user object fetched from data store
 //  error: as returned by getLocalUser(..)
-func GetLocalUser(username string) (*types.InternalLocalUser, error) {
+func GetLocalUser(username string) (*types.LocalUser, error) {
 	stateDrv, err := state.GetStateDriver()
 	if err != nil {
 		return nil, err
@@ -81,16 +85,20 @@ func GetLocalUser(username string) (*types.InternalLocalUser, error) {
 	return getLocalUser(username, stateDrv)
 }
 
-// UpdateLocalUser updates an existing entry in /ccn_proxy/users/local/<username>.
+// UpdateLocalUser updates an existing entry in /ccn_proxy/local_users/<username>.
 // params:
 //  username: string; of the user that requires update
-//  user: internal representation of the user (contains both user details + principal) object to be updated in the data store
+//  user: local user object to be updated in the data store
 // return values:
 //  error: as returned by AddLocalUser, DeleteLocalUser
-func UpdateLocalUser(username string, user *types.InternalLocalUser) error {
+func UpdateLocalUser(username string, user *types.LocalUser) error {
 	err := DeleteLocalUser(username)
 	switch err {
 	case nil:
+		if !common.IsEmpty(user.Password) {
+			user.PasswordHash = []byte{}
+		}
+
 		return AddLocalUser(user)
 	case ccnerrors.ErrKeyNotFound, ccnerrors.ErrIllegalOperation:
 		return err
@@ -101,7 +109,7 @@ func UpdateLocalUser(username string, user *types.InternalLocalUser) error {
 	}
 }
 
-// DeleteLocalUser removes a local user and its corresponding principal.
+// DeleteLocalUser removes a local user from `/ccn_proxy/local_users`
 // Built-in admin and ops local users cannot be deleted.
 // params:
 //  username: string; user to be removed from the system
@@ -118,55 +126,56 @@ func DeleteLocalUser(username string) error {
 		return err
 	}
 
-	user, err := getLocalUser(username, stateDrv)
+	_, err = getLocalUser(username, stateDrv)
 	if err != nil {
 		return err
 	}
 
-	if err := deletePrincipal(&user.Principal, stateDrv); err != nil {
-		return err
-	}
-
-	if err := stateDrv.ClearState(GetPath(RootLocalUsers, username)); err != nil {
-		//cleanup; there is always a principal associated with user (1-1 mapping)
-		addPrincipal(&user.Principal, stateDrv)
+	if err := stateDrv.Clear(GetPath(RootLocalUsers, username)); err != nil {
 		return fmt.Errorf("Failed to clear %q from store %#v", username, err)
 	}
 
 	return nil
 }
 
-// AddLocalUser adds a new user entry to /ccn_proxy/users/local/. It also adds a
-// corresponding principal in /ccn_proxy/users/principal/.
+// AddLocalUser adds a new user entry to /ccn_proxy/local_users/.
 // params:
-//  user: internal representation of the user (contains both user details + principal) object to be added to data store
+//  user: *types.LocalUser object that should be added to the data store
 // return Values:
 //  error: ccnerrors.ErrKeyExists if the user already exists or any relevant error from state driver
-func AddLocalUser(user *types.InternalLocalUser) error {
+func AddLocalUser(user *types.LocalUser) error {
 	stateDrv, err := state.GetStateDriver()
 	if err != nil {
 		return err
 	}
 
-	key := GetPath(RootLocalUsers, user.LocalUser.Username)
+	key := GetPath(RootLocalUsers, user.Username)
 
 	_, err = stateDrv.Read(key)
+
 	switch err {
 	case nil:
 		return ccnerrors.ErrKeyExists
 	case ccnerrors.ErrKeyNotFound:
-		if err := addPrincipal(&user.Principal, stateDrv); err != nil {
-			return err
+		// `AddLocalUser` request from update carries hash in `user.PasswordHash`
+		if common.IsEmpty(string(user.PasswordHash)) {
+			user.PasswordHash, err = common.GenPasswordHash(user.Password)
+
+			if err != nil {
+				log.Debugf("Failed to create password hash for user %q: %#v", user.Username, err)
+				return err
+			}
 		}
+
+		// raw password will never be stored in the store
+		user.Password = ""
 
 		val, err := json.Marshal(user)
 		if err != nil {
-			return fmt.Errorf("Failed to marshal user %#v, %#v", user, err)
+			return fmt.Errorf("Failed to marshal user %#v: %#v", user, err)
 		}
 
 		if err := stateDrv.Write(key, val); err != nil {
-			// cleanup; to ensure user.principal is not left behind in the data store
-			deletePrincipal(&user.Principal, stateDrv)
 			return fmt.Errorf("Failed to write local user info. to data store %#v", err)
 		}
 
@@ -180,35 +189,23 @@ func AddLocalUser(user *types.InternalLocalUser) error {
 // Default users cannot be changed(update/delete) anytime.
 func AddDefaultUsers() error {
 	for _, userR := range []types.RoleType{types.Admin, types.Ops} {
-		// principalID is the unique ID for each user
-		principalID := uuid.NewV4().String()
+		log.Printf("Adding local user %q to the system", userR.String())
 
-		localUser := types.InternalLocalUser{
-			LocalUser: types.LocalUser{
-				Username: userR.String(),
-				// default user accounts are `enabled` always; it cannot be disabled
-				Disable: false,
-			},
-			Principal: types.Principal{
-				UUID: principalID,
-				Role: userR,
-			},
-			PrincipalID: principalID,
+		localUser := types.LocalUser{
+			Username: userR.String(),
+			// default user accounts are `enabled` always; it cannot be disabled
+			Disable:  false,
+			Password: userR.String(),
 		}
 
-		var err error
-
-		// use the role name for the default password (e.g., "admin" user password is "admin")
-		localUser.PasswordHash, err = common.GenPasswordHash(userR.String())
-		if err != nil {
-			return err
+		err := AddLocalUser(&localUser)
+		if err == nil || err == ccnerrors.ErrKeyExists {
+			continue
 		}
 
-		if err := AddLocalUser(&localUser); err != nil {
-			return err
-		}
+		// TODO: add default authorization as well
 
-		log.Printf("Added local user '%s'", localUser.Username)
+		return err
 	}
 
 	return nil

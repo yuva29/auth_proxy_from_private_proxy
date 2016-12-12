@@ -215,7 +215,7 @@ func addLocalUser(token *auth.Token, w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	userCreateReq := &localUserCreateRequest{}
+	userCreateReq := &types.LocalUser{}
 	if err := json.Unmarshal(body, userCreateReq); err != nil {
 		serverError(w, errors.New("Failed to unmarshal user info. from request body: "+err.Error()))
 		return
@@ -253,7 +253,7 @@ func updateLocalUser(token *auth.Token, w http.ResponseWriter, req *http.Request
 		return
 	}
 
-	userUpdateReq := &localUserCreateRequest{}
+	userUpdateReq := &types.LocalUser{}
 	if err := json.Unmarshal(body, userUpdateReq); err != nil {
 		serverError(w, errors.New("Failed to unmarshal user info. from request body: "+err.Error()))
 		return
